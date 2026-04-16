@@ -2,9 +2,29 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
-const app = express();
+const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
+const app = express();
+app.use(express.json());
+
+// Claves de Entorno
 const API_KEY = process.env.GRAVATAR_KEY;
+const GEMINI_KEY = process.env.GEMINI_KEY;
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// Servir el Manifiesto para la App Móvil
+app.get('/manifest.json', (req, res) => {
+    res.json({
+        "name": "PerfilRav Omni-Hub Pro",
+        "short_name": "PerfilRav",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0f172a",
+        "theme_color": "#2563eb",
+        "icons": [{ "src": "https://flaticon.com", "sizes": "512x512", "type": "image/png" }]
+    });
+});
 
 app.get('/', (req, res) => {
     res.send(`
@@ -12,132 +32,186 @@ app.get('/', (req, res) => {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>PerfilRav Pro | Enterprise Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PerfilRav Omni-Hub Ultra</title>
+    <link rel="manifest" href="/manifest.json">
+    <link href="https://googleapis.com" rel="stylesheet">
+    <script src="https://jsdelivr.net"></script>
     <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --accent: #2563eb; --sidebar: #0f172a; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 260px; background: var(--sidebar); color: white; padding: 25px; display: flex; flex-direction: column; gap: 10px; }
-        .main { flex: 1; padding: 40px; overflow-y: auto; }
-        .card { background: var(--card); padding: 25px; border-radius: 20px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); margin-bottom: 25px; }
-        .btn { padding: 12px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; background: var(--accent); color: white; transition: 0.3s; width: 100%; text-align: left; }
-        .btn:hover { background: #3b82f6; }
-        .tab-content { display: none; } .active { display: block; }
-        .ai-chat { background: #f1f5f9; padding: 15px; border-radius: 15px; height: 300px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #e2e8f0; font-size: 14px; }
-        input, select, textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 10px; box-sizing: border-box; }
+        :root { --primary: #6366f1; --secondary: #a855f7; --bg: #0f172a; --card: rgba(30, 41, 59, 0.7); --text: #f1f5f9; --glass: rgba(255, 255, 255, 0.05); }
+        body { font-family: 'Outfit', sans-serif; margin: 0; display: flex; height: 100vh; background: #0f172a; color: var(--text); overflow: hidden; }
+        
+        /* Panic Mode */
+        #panic-screen { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; color: black; z-index: 20000; padding: 20px; font-family: sans-serif; }
+        
+        /* Login Overlay */
+        #login-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+
+        .sidebar { width: 280px; background: rgba(15, 23, 42, 0.95); padding: 25px; display: flex; flex-direction: column; border-right: 1px solid var(--glass); }
+        .nav-btn { padding: 12px 15px; border-radius: 12px; border: none; cursor: pointer; background: transparent; color: var(--text); width: 100%; text-align: left; margin-bottom: 5px; transition: 0.3s; display: flex; align-items: center; gap: 12px; }
+        .nav-btn:hover, .nav-btn.active { background: var(--primary); }
+
+        .main-container { flex: 1; padding: 30px; overflow-y: auto; background: radial-gradient(circle at top right, #1e1b4b, #0f172a); }
+        .tab-page { display: none; animation: fadeIn 0.4s ease; }
+        .tab-page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .glass-card { background: var(--card); backdrop-filter: blur(12px); padding: 25px; border-radius: 24px; border: 1px solid var(--glass); margin-bottom: 20px; }
+        input, textarea, select { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--glass); background: rgba(0,0,0,0.3); color: white; margin-bottom: 10px; outline: none; }
+        
+        /* Calendario */
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+        .cal-day { padding: 10px; background: var(--glass); border-radius: 8px; cursor: pointer; }
+        .today { background: var(--primary); font-weight: bold; }
     </style>
 </head>
 <body>
+
+    <div id="panic-screen">
+        <h3>Presupuesto_Trimestral.xlsx</h3>
+        <table border="1" style="width:100%"><tr><td>ID</td><td>Gasto</td><td>Total</td></tr><tr><td>01</td><td>Cloud Hosting</td><td>$4,500</td></tr></table>
+        <p>Presione ESC para volver</p>
+    </div>
+
+    <div id="login-overlay">
+        <div class="glass-card" style="text-align:center">
+            <h1>🛡️ PerfilRav Pro</h1>
+            <p>Acceso Privado</p>
+            <button onclick="login()" style="padding:15px 30px; border-radius:10px; cursor:pointer; font-weight:bold">Continuar con Google</button>
+        </div>
+    </div>
+
     <div class="sidebar">
-        <h2 style="color:var(--accent)">PerfilRav Pro</h2>
-        <nav style="display:flex; flex-direction:column; gap:10px;">
-            <button class="btn" onclick="showTab('tab-search')">🔍 Buscador</button>
-            <button class="btn" onclick="showTab('tab-ai')">🤖 Asistente IA Multi</button>
-            <button class="btn" onclick="showTab('tab-notes')">📝 Bloc de Notas</button>
-            <button class="btn" onclick="showTab('tab-forum')">💬 Foro Abierto</button>
+        <div style="text-align:center; margin-bottom:20px">
+            <img id="side-avatar" src="" style="width:60px; border-radius:50%">
+            <h4 id="side-name">Raven</h4>
+            <div id="clock" style="font-weight:bold">00:00</div>
+        </div>
+        <nav>
+            <button class="nav-btn active" onclick="nav('p-dash', this)">📊 Dashboard</button>
+            <button class="nav-btn" onclick="nav('p-ai', this)">🤖 Asistente IA</button>
+            <button class="nav-btn" onclick="nav('p-feed', this)">📱 Muro Social</button>
+            <button class="nav-btn" onclick="nav('p-cal', this)">📅 Calendario</button>
+            <button class="nav-btn" onclick="nav('p-tools', this)">🛠️ Herramientas</button>
+            <button class="nav-btn" style="margin-top:20px; background:#ef4444" onclick="logout()">🔒 Salir</button>
         </nav>
     </div>
 
-    <div class="main">
-        <!-- BUSCADOR -->
-        <div id="tab-search" class="tab-content active">
-            <div class="card">
-                <h1>Buscador de Identidad</h1>
-                <input type="email" id="email" placeholder="correo@ejemplo.com">
-                <button class="btn" style="text-align:center" onclick="buscar()">Buscar Perfil</button>
-                <div id="resultado" style="margin-top:20px"></div>
+    <div class="main-container">
+        <!-- DASHBOARD -->
+        <div id="p-dash" class="tab-page active">
+            <div class="glass-card">
+                <h1 id="greeting">Bienvenido</h1>
+                <div id="weather">Cargando clima...</div>
+            </div>
+            <div class="glass-card">
+                <h3>🚀 Buscador Inteligente</h3>
+                <select id="engine"><option value="google">Google</option><option value="scholar">Académico</option></select>
+                <input id="q" placeholder="Buscar..."><button class="nav-btn" onclick="search()">Ir</button>
             </div>
         </div>
 
-        <!-- ASISTENTE IA -->
-        <div id="tab-ai" class="tab-content">
-            <div class="card">
-                <h1>Asistente IA Inteligente</h1>
-                <select id="aiModel">
-                    <option value="gemini">Google Gemini (Gratis)</option>
-                    <option value="groq">Groq / Llama 3 (Veloz)</option>
-                    <option value="deepseek">DeepSeek (Avanzado)</option>
-                </select>
-                <div id="aiChat" class="ai-chat">Hola. Elige un modelo y pregúntame lo que quieras.</div>
-                <div style="display:flex; gap:10px">
-                    <input id="aiInput" placeholder="Escribe tu duda..." onkeypress="if(event.key==='Enter') preguntarIA()">
-                    <button class="btn" style="width:auto" onclick="preguntarIA()">Enviar</button>
-                </div>
+        <!-- IA -->
+        <div id="p-ai" class="tab-page">
+            <div class="glass-card">
+                <h3>🤖 AI Lab (Gemini)</h3>
+                <div id="aiChat" style="height:200px; overflow-y:auto; background:rgba(0,0,0,0.2); padding:10px; border-radius:10px; margin-bottom:10px"></div>
+                <input id="aiIn" placeholder="Pregunta algo..."><button class="nav-btn" onclick="ask()">Enviar</button>
             </div>
         </div>
 
-        <!-- BLOC DE NOTAS -->
-        <div id="tab-notes" class="tab-content">
-            <div class="card">
-                <h1>Mi Bloc Personal</h1>
-                <textarea id="myNotes" style="height:200px" oninput="localStorage.setItem('pNotes', this.value)"></textarea>
+        <!-- MURO -->
+        <div id="p-feed" class="tab-page">
+            <div class="glass-card">
+                <h3>Nuevo Post</h3>
+                <input id="p-t" placeholder="Título"><textarea id="p-c" placeholder="Contenido"></textarea>
+                <button class="nav-btn" onclick="savePost()">Publicar</button>
             </div>
+            <div id="feed-container"></div>
         </div>
 
-        <!-- FORO -->
-        <div id="tab-forum" class="tab-content">
-            <div class="card">
-                <h1>Foro Abierto</h1>
-                <div id="forumList"></div>
+        <!-- CALENDARIO -->
+        <div id="p-cal" class="tab-page">
+            <div class="glass-card"><div class="calendar-grid" id="calGrid"></div></div>
+        </div>
+
+        <!-- HERRAMIENTAS -->
+        <div id="p-tools" class="tab-page">
+            <div class="glass-card">
+                <h3>Calculadora</h3>
+                <input id="calc-in"><button class="nav-btn" onclick="document.getElementById('calc-in').value=eval(document.getElementById('calc-in').value)">=</button>
             </div>
         </div>
     </div>
 
     <script>
-        function showTab(id) {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        const supabase = supabase.createClient('${process.env.SUPABASE_URL}', '${process.env.SUPABASE_KEY}');
+
+        function nav(id, btn) {
+            document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(id).classList.add('active');
+            btn.classList.add('active');
         }
 
-        async function preguntarIA() {
-            const prompt = document.getElementById('aiInput').value;
-            const model = document.getElementById('aiModel').value;
-            const chat = document.getElementById('aiChat');
-            if(!prompt) return;
-
-            chat.innerHTML += "<div><b>Tú:</b> " + prompt + "</div>";
-            document.getElementById('aiInput').value = "";
-            
-            try {
-                const res = await fetch('/api/ai/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ prompt, model })
-                });
-                const data = await res.json();
-                chat.innerHTML += "<div style='color:var(--accent)'><b>IA ("+model+"):</b> " + data.respuesta + "</div>";
-                chat.scrollTop = chat.scrollHeight;
-            } catch(e) { chat.innerHTML += "<div>Error conectando con la IA</div>"; }
+        // --- SEGURIDAD ---
+        async function login() { await supabase.auth.signInWithOAuth({ provider: 'google' }); }
+        async function logout() { await supabase.auth.signOut(); location.reload(); }
+        async function checkUser() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                document.getElementById('login-overlay').style.display = 'none';
+                document.getElementById('side-avatar').src = session.user.user_metadata.avatar_url;
+                document.getElementById('side-name').innerText = session.user.user_metadata.full_name;
+                renderPosts();
+            }
         }
 
-        async function buscar() {
-            const email = document.getElementById('email').value;
-            const div = document.getElementById('resultado');
-            const res = await fetch('/api/v1/' + encodeURIComponent(email));
-            const data = await res.json();
-            let img = data.avatar_url || 'https://gravatar.com' + data.hash + '?d=identicon';
-            div.innerHTML = '<img src="'+img+'" style="border-radius:50%; width:120px; border:4px solid var(--accent)"><h2>'+(data.display_name || 'Invitado')+'</h2>';
+        // --- FUNCIONES ---
+        function search() {
+            const engine = document.getElementById('engine').value;
+            const q = document.getElementById('q').value;
+            window.open(engine === 'google' ? 'https://google.com : 'https://google.com);
         }
 
-        document.getElementById('myNotes').value = localStorage.getItem('pNotes') || "";
+        async function ask() {
+            const p = document.getElementById('aiIn').value;
+            const res = await fetch('/api/ai', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt:p}) });
+            const d = await res.json();
+            document.getElementById('aiChat').innerHTML += "<div><b>IA:</b> "+d.r+"</div>";
+        }
+
+        async function savePost() {
+            const titulo = document.getElementById('p-t').value;
+            const contenido = document.getElementById('p-c').value;
+            await supabase.from('publicaciones').insert([{ titulo, contenido }]);
+            renderPosts();
+        }
+
+        async function renderPosts() {
+            const { data } = await supabase.from('publicaciones').select('*').order('created_at', {ascending:false});
+            document.getElementById('feed-container').innerHTML = data.map(p => '<div class="glass-card"><h4>'+p.titulo+'</h4><p>'+p.contenido+'</p></div>').join('');
+        }
+
+        // --- PÁNICO ---
+        window.onkeydown = (e) => { if(e.key === 'Escape') document.getElementById('panic-screen').style.display = 'block'; };
+        
+        setInterval(() => { document.getElementById('clock').innerText = new Date().toLocaleTimeString(); }, 1000);
+        window.onload = checkUser;
     </script>
 </body>
 </html>
     `);
 });
 
-// --- BACKEND IA ---
-app.post('/api/ai/chat', express.json(), async (req, res) => {
-    const { prompt, model } = req.body;
+// BACKEND APIS
+app.post('/api/ai', async (req, res) => {
     try {
-        if (model === 'gemini') {
-            const resp = await axios.post(\`https://googleapis.com\${process.env.GEMINI_KEY}\`, {
-                contents: [{ parts: [{ text: prompt }] }]
-            });
-            return res.json({ respuesta: resp.data.candidates[0].content.parts[0].text });
-        }
-        // ... (Aquí puedes añadir los bloques de Groq o DeepSeek iguales al anterior)
-        res.json({ respuesta: "Modelo seleccionado: " + model + ". (Configura las llaves en Render)" });
-    } catch (e) { res.status(500).json({ respuesta: "Error al consultar la IA." }); }
+        const resp = await axios.post(\`https://googleapis.com\${GEMINI_KEY}\`, {
+            contents: [{ parts: [{ text: req.body.prompt }] }]
+        });
+        res.json({ r: resp.data.candidates.content.parts.text });
+    } catch (e) { res.json({ r: "Error IA" }); }
 });
 
 app.get('/api/v1/:email', async (req, res) => {
@@ -150,5 +224,4 @@ app.get('/api/v1/:email', async (req, res) => {
     } catch (e) { res.json({ hash, status: 404 }); }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("🚀 PerfilRav Pro Actualizado"));
-
+app.listen(process.env.PORT || 3000, () => console.log("🚀 Omni-Hub Final listo"));
